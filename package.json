@@ -6,6 +6,7 @@
   "engines": { "node": ">=22.13.0" },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "build:pages": "vite build --config vite.pages.config.ts && node scripts/prepare-pages.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --experimental-strip-types --test scripts/test-domain.mjs scripts/test-mail.mjs",

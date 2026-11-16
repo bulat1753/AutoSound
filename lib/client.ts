@@ -1,5 +1,6 @@
 "use client";
 export async function api<T = any>(path: string, data?: unknown, method?: string): Promise<T> {
+  if (import.meta.env.VITE_PREVIEW === "true") return (await import("./preview-data")).previewApi(path, data, method);
   const isForm = data instanceof FormData;
   const response = await fetch(`/api/${path}`, {
     method: method || (data ? "POST" : "GET"), credentials: "same-origin",
@@ -10,6 +11,8 @@ export async function api<T = any>(path: string, data?: unknown, method?: string
   if (!response.ok) throw new Error(result.error || "Сервер недоступен. Попробуйте ещё раз");
   return result;
 }
+export const publicAsset = (name: string) => import.meta.env.BASE_URL + name;
+export const photoUrl = (id: string) => import.meta.env.VITE_PREVIEW === "true" ? localStorage.getItem(`ss-photo-${id}`) || "" : `/api/photos/${id}`;
 let audio: AudioContext | undefined;
 export async function playSound(kind: string) {
   if (kind === "none") return;
