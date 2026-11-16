@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { SOUNDS, WORK_STATUSES, shiftDate, totals, type WorkItem } from "./domain";
+import { SOUNDS, WORK_STATUSES, shiftDate, totals, withoutFinances, type WorkItem } from "./domain";
 import { MailError, mailConfigured, sendAuthMail, type MailKind } from "./mail";
 
 const db = () => { if (!env.DB) throw new ApiError(503, "База данных не подключена"); return env.DB; };
@@ -64,7 +64,7 @@ async function issueToken(userId: string, type: MailKind, email: string) {
   catch (error) { await db().prepare("DELETE FROM auth_tokens WHERE token=?").bind(hashed).run(); throw error; }
 }
 async function getOrder(id: number, user: any, edit = false) {
-  const row = await one("SELECT o.*,u.name AS creator_name FROM orders o JOIN users u ON u.id=o.created_by WHERE o.id=?", id);
+  const row = await one("SELECT o.*,u.name AS creator_name FROM orders o JOIN users u ON u.id=o.created_by WHERE o.id=? AND o.status<>'deleted'", id);
   assert(row, "Заказ не найден", 404);
   if (edit) assert(user.role === "owner" || row.createdBy === user.id, "Можно изменять только свои заказы", 403);
   row.items = JSON.parse(row.items);
@@ -200,8 +200,19 @@ async function manageServices(request: Request, user: any, id: string | undefine
   return json({ ok: true }, id ? 200 : 201);
 }
 async function manageOrder(request: Request, user: any, id: number | undefined, data: any) {
-  assert(["POST", "PUT", "PATCH"].includes(request.method), "Метод не поддерживается", 405);
+  assert(["POST", "PUT", "PATCH", "DELETE"].includes(request.method), "Метод не поддерживается", 405);
+  if (request.method === "DELETE") owner(user);
   const old = id ? await getOrder(id, user, true) : null;
+  if (request.method === "DELETE") {
+    assert(old, "Заказ не найден", 404);
+    assert(typeof data.removeFinances === "boolean", "Выберите, сохранять ли финансы");
+    const statements = [];
+    if (data.removeFinances) statements.push(db().prepare("DELETE FROM payments WHERE order_id=? AND EXISTS(SELECT 1 FROM orders WHERE id=? AND version=? AND status<>'deleted')").bind(id, id, data.version));
+    statements.push(db().prepare("UPDATE orders SET status='deleted',items=?,updated_at=?,version=version+1 WHERE id=? AND version=? AND status<>'deleted'").bind(JSON.stringify(data.removeFinances ? withoutFinances(old.items) : old.items), now(), id, data.version));
+    const result = await db().batch(statements);
+    assert(result[result.length - 1].meta.changes, "Заказ изменился. Обновите данные перед удалением", 409);
+    return json({ ok: true });
+  }
   if (request.method === "PATCH" && old) {
     assert(data.status === "active" || data.status === "completed", "Некорректный статус");
     assert(data.status !== "completed" || old.items.every((i: WorkItem) => i.status === "done"), "Сначала отметьте все работы выполненными");

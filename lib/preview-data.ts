@@ -1,4 +1,4 @@
-import { shiftDate, todayMoscow, totals } from "./domain";
+import { shiftDate, todayMoscow, totals, withoutFinances } from "./domain";
 
 const key = "street-scream-preview-v1";
 const user = { id: "owner", name: "Александр Иванов", login: "owner", role: "owner", email: null, mustChangePassword: 0 };
@@ -30,6 +30,8 @@ export async function previewApi(path: string, body?: any, method = body ? "POST
     const order = state.orders.find((o: any) => o.id === Number(id));
     if (!id) { const orderId = Math.max(0, ...state.orders.map((o: any) => o.id)) + 1; state.orders.unshift({ ...body, id: orderId, createdBy: state.user.id, creatorName: state.user.name, status: "active", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), version: 1, payments: [], photos: [], reports: [] }); return save({ id: orderId }); }
     if (!order) throw new Error("Заказ не найден");
+    if (order.status === "deleted") throw new Error("Заказ удалён");
+    if (method === "DELETE") { if (state.user.role !== "owner") throw new Error("Действие доступно только владельцу"); if (typeof body.removeFinances !== "boolean") throw new Error("Выберите, сохранять ли финансы"); if (body.version !== order.version) throw new Error("Заказ изменился. Обновите данные"); order.status = "deleted"; order.version++; if (body.removeFinances) { order.payments = []; order.items = withoutFinances(order.items); } return save(); }
     if (action === "payments") { if (order.payments.some((p: any) => p.id === body.id)) return { ok: true }; const t = totals(order); if (body.laborAmount > t.labor - t.laborPaid || body.componentsAmount > t.components - t.componentsPaid || body.laborAmount + body.componentsAmount <= 0) throw new Error("Проверьте сумму оплаты"); order.payments.unshift({ ...body, orderId: order.id, amount: body.laborAmount + body.componentsAmount, employeeId: body.employeeId || order.createdBy, createdAt: new Date().toISOString(), shiftDate: shiftDate() }); return save(); }
     if (action === "reports") { const reportId = freshId(); order.reports.unshift({ id: reportId, orderId: order.id, authorId: state.user.id, body: body.body, createdAt: new Date().toISOString() }); return save({ id: reportId }); }
     if (action === "photos") { const file = body.get("file") as File; const photoId = freshId(); const url = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); localStorage.setItem(`ss-photo-${photoId}`, url); order.photos.push({ id: photoId, orderId: order.id, filename: file.name, reportId: body.get("reportId") || null }); return save({ id: photoId }); }

@@ -26,4 +26,5 @@ export function shiftShares(labor: number) {
   const employee = Math.round(labor * 0.3);
   return { employee, owner: labor - employee };
 }
+export const withoutFinances = (items: WorkItem[]) => items.map(item => ({ ...item, components: 0, cost: 0, labor: 0, advance: 0 }));
 export const todayMoscow = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Moscow", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
